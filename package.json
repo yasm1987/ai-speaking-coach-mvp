@@ -1,8 +1,9 @@
 {
   "name": "ai-speaking-coach-web-v0",
   "version": "1.0.0",
-  "engines":   {
+  "engines": {
     "node": ">=20.19.0"
+  },
   "private": true,
   "type": "module",
   "scripts": {
