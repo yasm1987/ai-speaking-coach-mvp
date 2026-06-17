@@ -1,0 +1,5 @@
+cd D:\火箭泡英语\ai-speaking-coach-mvp
+.\start_backend.ps1
+
+cd D:\火箭泡英语\ai-speaking-coach-mvp
+npm run dev

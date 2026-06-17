@@ -1,0 +1,36 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+
+# local env files
+.env
+.env*.local
+
+# local editor / assistant settings
+.vscode/
+.claude/
+.agents/
+.codex/
+
+# Python backend local runtime
+.venv/
+__pycache__/
+*.pyc
+app_data/
+
+# logs
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# packaged demo archives
+*.zip
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# TypeScript
+*.tsbuildinfo
