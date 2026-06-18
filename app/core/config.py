@@ -71,7 +71,7 @@ def get_settings() -> Settings:
         database_url=os.getenv("DATABASE_URL", f"sqlite:///{default_db_path.as_posix()}"),
         cors_origins=_split_csv(
             os.getenv("CORS_ORIGINS"),
-            ["*"] if os.getenv("APP_ENV", "development") != "production" else [],
+            ["*"],
         ),
         llm_provider=os.getenv("LLM_PROVIDER", "mock"),
         asr_provider=os.getenv("ASR_PROVIDER", "mock"),
