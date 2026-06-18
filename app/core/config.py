@@ -69,10 +69,7 @@ def get_settings() -> Settings:
         host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", "8000")),
         database_url=os.getenv("DATABASE_URL", f"sqlite:///{default_db_path.as_posix()}"),
-        cors_origins=_split_csv(
-            os.getenv("CORS_ORIGINS"),
-            ["*"],
-        ),
+        cors_origins=["*"],
         llm_provider=os.getenv("LLM_PROVIDER", "mock"),
         asr_provider=os.getenv("ASR_PROVIDER", "mock"),
         tts_provider=os.getenv("TTS_PROVIDER", "mock"),
