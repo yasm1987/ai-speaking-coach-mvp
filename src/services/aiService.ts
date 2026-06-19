@@ -1,12 +1,8 @@
 import type { ErrorSentence, PracticeTask, SpeakingCriterionScore, StudyReport, Unit } from "../types";
+import { getApiBaseUrl } from "./apiBase";
 import { convertBlobToWav } from "./audioFormat";
 
-function normalizeApiBaseUrl(value?: string) {
-  const baseUrl = (value ?? "http://127.0.0.1:8000/api/v1").replace(/\/$/, "");
-  return baseUrl.endsWith("/api/v1") ? baseUrl : `${baseUrl}/api/v1`;
-}
-
-const API_BASE_URL = normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
+const API_BASE_URL = getApiBaseUrl();
 const DEMO_USER_ID = "demo-student";
 
 type ApiEnvelope<T> = {
@@ -39,38 +35,38 @@ function speakingScores(
   const base: SpeakingCriterionScore[] = [
     {
       key: "grammarVocabulary",
-      label: "璇嶆眹涓庡彞鍨?Words & Sentence Patterns",
+      label: "词汇与句型 Words & Sentence Patterns",
       score: 4,
       maxScore: 5,
-      feedback: "鑳藉浣跨敤鏈崟鍏冩牳蹇冭瘝姹囧拰鍩虹鍙ュ瀷锛屼釜鍒〃杈捐繕鍙互鍐嶇ǔ涓€鐐广€?,
+      feedback: "能使用本单元核心词汇和基础句型，个别表达还可以再稳定一点。",
     },
     {
       key: "discourseManagement",
-      label: "鐞嗚В涓庡洖搴?Understanding & Response",
+      label: "理解与回应 Understanding & Response",
       score: 4,
       maxScore: 5,
-      feedback: "鑳藉鍚噦绠€鍗曢棶棰橈紝骞剁粰鍑鸿创棰樼殑鐭彞鍥炵瓟銆?,
+      feedback: "能听懂简单问题，并给出贴题的短句回答。",
     },
     {
       key: "pronunciation",
-      label: "鍙戦煶 Pronunciation",
+      label: "发音 Pronunciation",
       score: 4,
       maxScore: 5,
-      feedback: "鏁翠綋鍙戦煶娓呮锛屼釜鍒瘝灏惧拰閲嶉煶杩樺彲浠ユ洿绋冲畾銆?,
+      feedback: "整体发音清楚，个别词尾和重音还可以更稳定。",
     },
     {
       key: "interactiveCommunication",
-      label: "浜掑姩涓庤嚜淇?Interaction & Confidence",
+      label: "互动与自信 Interaction & Confidence",
       score: 4,
       maxScore: 5,
-      feedback: "鑳藉弬涓庨棶绛旓紝鍥炵瓟鏃舵瘮杈冭嚜鐒讹紝鏈変竴瀹氳嚜淇°€?,
+      feedback: "能参与问答，回答比较自然，有一定自信。",
     },
     {
       key: "globalAchievement",
-      label: "鍙ｈ鐩剧墝 Speaking Shields",
+      label: "口语盾牌 Speaking Shields",
       score: 4,
       maxScore: 5,
-      feedback: "鏁翠綋杈惧埌鏈疆灏戝効鍙ｈ缁冧範鐩爣銆?,
+      feedback: "整体达到本轮少儿口语练习目标。",
     },
   ];
 
@@ -155,51 +151,51 @@ async function saveLearningSession(sessionType: string, summary: string, score?:
       },
     });
   } catch {
-    // 淇濆瓨瀛︿範璁板綍澶辫触鏃朵笉鎵撴柇鍓嶇婕旂ず娴佺▼
+    // 学习记录保存失败时，不打断前端演示流程。
   }
 }
 
-function getMockTasks(unit: Unit): PracticeTask[] {
+function buildDemoTasks(unit: Unit): PracticeTask[] {
   return [
     {
       id: "task-word",
-      title: `璇嶆眹璺熻 ${unit.words.length} 涓猔,
-      description: `鍚 ${unit.title} 鐨勬牳蹇冭瘝姹囷紝閲嶇偣鎰熺煡椋熺墿绫诲崟璇嶅彂闊炽€俙,
+      title: `词汇跟读 ${unit.words.length} 个`,
+      description: `听标准发音并跟读 ${unit.title} 的核心词汇。`,
       type: "word",
       status: "not_started",
     },
     {
       id: "task-sentence",
-      title: `鍙ュ瀷璺熻 ${unit.sentences.length} 涓猔,
-      description: "璺熻鏈崟鍏冮噸鐐瑰彞鍨嬶紝鍑嗗杩涘叆 AI 瀵硅瘽銆?,
+      title: `句型跟读 ${unit.sentences.length} 个`,
+      description: "跟读本单元重点句型，为后面的 AI 对话做准备。",
       type: "sentence",
       status: "not_started",
     },
     {
       id: "task-dialogue",
-      title: "AI 瀵硅瘽 1 杞?,
-      description: `鍥炵瓟 AI 鍏充簬 ${unit.topic} 鐨勯棶棰橈紝绯荤粺浼氳褰曢渶瑕佺籂姝ｇ殑鍙ュ瓙銆俙,
+      title: "AI 对话 1 轮",
+      description: `围绕 ${unit.topic} 主题回答 AI 老师的问题，系统会记录需要复练的表达。`,
       type: "dialogue",
       status: "not_started",
     },
     {
       id: "task-review",
-      title: "閿欏彞澶嶇粌",
-      description: "澶嶇粌閿欏彞鏈腑鐨勫緟鎺屾彙鍐呭锛屽畬鎴愬悗杩涘叆瀛︿範鎶ュ憡銆?,
+      title: "错句复练",
+      description: "复练错句本中的待掌握内容，完成后进入学习报告。",
       type: "review",
       status: "not_started",
     },
     {
       id: "task-report",
-      title: "鏌ョ湅瀛︿範鎶ュ憡",
-      description: "姹囨€讳粖鏃ヤ换鍔°€佸凡鎺屾彙琛ㄨ揪銆佸緟澶嶇粌閿欏彞鍜?AI 寤鸿銆?,
+      title: "查看学习报告",
+      description: "汇总今日任务、口语表现、待复练内容和下一步建议。",
       type: "report",
       status: "not_started",
     },
   ];
 }
 
-function getMockReadingAnalysis(targetText: string, userText?: string) {
+function buildDemoReadingAnalysis(targetText: string, userText?: string) {
   const text = userText?.trim() || targetText;
   const hasPluralMiss = targetText.includes("apples") && !text.includes("apples");
   const hasPronunciationRisk = /\b(sandwich|milk)\b/i.test(targetText);
@@ -209,26 +205,26 @@ function getMockReadingAnalysis(targetText: string, userText?: string) {
   return {
     score,
     feedback: hasPluralMiss
-      ? "鏁翠綋琛ㄨ揪娓呮锛屼絾 apples 缁撳熬鐨?/s/ 杩橀渶瑕佹洿鏄庢樉涓€浜涖€?
+      ? "演示兜底评分：整体表达清楚，但 apples 词尾 /s/ 需要更明显。"
       : hasPronunciationRisk
-        ? "鑳藉璇诲嚭鐩爣璇嶏紝浣嗗彂闊虫竻鏅板害杩樹笉澶熺ǔ瀹氾紝寤鸿鍔犲叆閿欏彞鏈户缁缁冦€?
-        : "鍙戦煶娓呮锛岃妭濂忚嚜鐒讹紝鍙互杩涘叆涓嬩竴棰樸€?,
+        ? "演示兜底评分：能读出目标词，但发音清晰度还不够稳定，建议进入错句本继续复练。"
+        : "演示兜底评分：发音清楚，节奏自然，可以进入下一题。",
     lowScoreWords,
     criteria: speakingScores(
       hasPluralMiss
         ? {
-            pronunciation: { score: 3, feedback: "闇€瑕佸姞寮鸿瘝灏?/s/ 鐨勫彂闊虫竻鏅板害銆? },
-            grammarVocabulary: { score: 4, feedback: "鐩爣璇嶆眹鑳借瘑鍒紝澶嶆暟褰㈠紡杩樿缁х画缁冦€? },
+            pronunciation: { score: 3, feedback: "需要加强词尾 /s/ 的发音清晰度。" },
+            grammarVocabulary: { score: 4, feedback: "目标词汇能识别，复数形式还要继续练。" },
           }
         : {
-            pronunciation: { score: 4, feedback: "鍙戦煶娓呮锛岄噸闊冲拰鑺傚姣旇緝鑷劧銆? },
-            globalAchievement: { score: 4, feedback: "瀹屾垚鏈璺熻鐩爣銆? },
+            pronunciation: { score: hasPronunciationRisk ? 3 : 4, feedback: "发音基本清楚，继续注意重音和尾音。" },
+            globalAchievement: { score: hasPronunciationRisk ? 3 : 4, feedback: "完成本题跟读目标。" },
           },
     ),
   };
 }
 
-function getMockDialogueRuleResult(question: string, answer: string) {
+function getDialogueRuleResult(question: string, answer: string) {
   const normalizedQuestion = question.trim().toLowerCase();
   const normalizedAnswer = answer.trim().toLowerCase();
   const fruitWords = ["apple", "banana", "watermelon", "orange", "pear", "grape", "strawberry", "mango"];
@@ -237,14 +233,14 @@ function getMockDialogueRuleResult(question: string, answer: string) {
   if (normalizedAnswer === "i like apple.") {
     return {
       isCorrect: false,
-      feedback: "鎰忔€濊〃杈惧嚭鏉ヤ簡锛屼絾杩欓噷瑕佽 I like apples.",
+      feedback: "意思表达出来了，但这里建议说 I like apples.",
       correctedSentence: "I like apples.",
-      explanation: "琛ㄨ揪鍠滄鏌愪竴绫婚鐗╂椂锛宎pple 鍦ㄨ繖閲岄€氬父瑕佺敤澶嶆暟 apples銆?,
-      errorType: "鍚嶈瘝鍗曞鏁?,
+      explanation: "表达喜欢某一类食物时，apple 通常使用复数 apples。",
+      errorType: "名词单复数",
       criteria: speakingScores({
-        grammarVocabulary: { score: 2, feedback: "椋熺墿绫诲悕璇嶅鏁拌繕涓嶇ǔ瀹氾紝闇€瑕佸缁?I like + 澶嶆暟鍚嶈瘝銆? },
-        interactiveCommunication: { score: 4, feedback: "鑳藉洖搴旈棶棰橈紝琛ㄨ揪鎰忓浘娓呮銆? },
-        globalAchievement: { score: 3, feedback: "鎰忔€濆彲鐞嗚В锛屼絾杩橀渶瑕佷慨姝ｅ悗鍐嶆嬁鏇撮珮鐩剧墝銆? },
+        grammarVocabulary: { score: 2, feedback: "食物类名词复数还不稳定，需要复练 I like + 复数名词。" },
+        interactiveCommunication: { score: 4, feedback: "能回应问题，表达意图清楚。" },
+        globalAchievement: { score: 3, feedback: "意思可理解，但修正后表达会更自然。" },
       }),
     };
   }
@@ -252,14 +248,14 @@ function getMockDialogueRuleResult(question: string, answer: string) {
   if (normalizedAnswer === "i no like milk.") {
     return {
       isCorrect: false,
-      feedback: "鍚﹀畾鍙ョ粨鏋勯渶瑕佽皟鏁达紝鍙互璇?I don't like milk.",
+      feedback: "否定句结构需要调整，可以说 I don't like milk.",
       correctedSentence: "I don't like milk.",
-      explanation: "鑻辫鍚﹀畾鍙ラ渶瑕佺敤 don't锛屼笉鑳界洿鎺ヨ no like銆?,
-      errorType: "鍚﹀畾鍙ョ粨鏋?,
+      explanation: "英语否定句需要用 don't，不能直接说 no like。",
+      errorType: "否定句结构",
       criteria: speakingScores({
-        grammarVocabulary: { score: 2, feedback: "鍚﹀畾鍙ラ渶瑕佷娇鐢?don't like銆? },
-        interactiveCommunication: { score: 4, feedback: "鍥炵瓟鏂瑰悜姝ｇ‘锛岃兘琛ㄨ揪涓嶅枩娆€? },
-        globalAchievement: { score: 3, feedback: "淇鍙ュ瀷鍚庡彲浠ヨ幏寰楁洿绋冲畾鐨勫彛璇〃鐜般€? },
+        grammarVocabulary: { score: 2, feedback: "否定句需要使用 don't like。" },
+        interactiveCommunication: { score: 4, feedback: "回答方向正确，能表达不喜欢。" },
+        globalAchievement: { score: 3, feedback: "修正句型后可以获得更稳定的口语表现。" },
       }),
     };
   }
@@ -267,15 +263,14 @@ function getMockDialogueRuleResult(question: string, answer: string) {
   if (normalizedQuestion.includes("milk")) {
     const answersMilkQuestion =
       normalizedAnswer.includes("milk") || normalizedAnswer === "yes, i do." || normalizedAnswer === "no, i don't.";
-
     if (!answersMilkQuestion) {
       return {
         isCorrect: false,
-        feedback: "杩欏彞璇濇湰韬彲浠ワ紝浣嗘病鏈夌洿鎺ュ洖绛?Do you like milk? 杩欎釜闂銆?,
+        feedback: "这句话本身可以，但没有直接回答 Do you like milk? 这个问题。",
         criteria: speakingScores({
-          discourseManagement: { score: 2, feedback: "鍚噦棰樼洰鍚庨渶瑕佺洿鎺ュ洖绛?milk 鐩稿叧闂銆? },
-          interactiveCommunication: { score: 2, feedback: "娌℃湁鐩存帴鍥炲簲褰撳墠闂锛屼簰鍔ㄧ浉鍏虫€т笉澶熴€? },
-          globalAchievement: { score: 3, feedback: "琛ㄨ揪娓呮锛屼絾浠诲姟瀹屾垚搴︿笉澶熴€? },
+          discourseManagement: { score: 2, feedback: "听到 milk 问题后，需要直接回答 milk 相关内容。" },
+          interactiveCommunication: { score: 2, feedback: "没有直接回应当前问题，互动相关性不够。" },
+          globalAchievement: { score: 3, feedback: "表达清楚，但任务完成度不够。" },
         }),
       };
     }
@@ -286,11 +281,14 @@ function getMockDialogueRuleResult(question: string, answer: string) {
     if (!answersFruitQuestion) {
       return {
         isCorrect: false,
-        feedback: "杩欏彞璇濇病鏈夊洖绛旀按鏋滈棶棰樸€傚彲浠ヨ I like apples. 鎴?I like bananas.",
+        feedback: "这句话没有回答水果问题。可以说 I like apples. 或 I like bananas.",
+        correctedSentence: "I like apples.",
+        explanation: "回答 fruit 问题时，需要使用水果词汇。",
+        errorType: "答非所问",
         criteria: speakingScores({
-          discourseManagement: { score: 2, feedback: "闇€瑕佸惉鍒?fruit锛屽苟鐢ㄦ按鏋滆瘝鍥炵瓟銆? },
-          interactiveCommunication: { score: 2, feedback: "鍥炵瓟娌℃湁鍥寸粫 fruit 闂灞曞紑銆? },
-          globalAchievement: { score: 3, feedback: "闇€瑕佹洿璐村悎浠诲姟瑕佹眰銆? },
+          discourseManagement: { score: 2, feedback: "需要听到 fruit，并用水果词回答。" },
+          interactiveCommunication: { score: 2, feedback: "回答没有围绕 fruit 问题展开。" },
+          globalAchievement: { score: 3, feedback: "需要更贴合任务要求。" },
         }),
       };
     }
@@ -301,11 +299,14 @@ function getMockDialogueRuleResult(question: string, answer: string) {
     if (!answersFoodQuestion) {
       return {
         isCorrect: false,
-        feedback: "杩欏彞璇濇病鏈夊洖绛斿枩娆粈涔堥鐗┿€傝鐢ㄦ湰鍗曞厓鐨勯鐗╄瘝姹囦綔绛斻€?,
+        feedback: "这句话没有回答喜欢什么食物。请用本单元的食物词汇作答。",
+        correctedSentence: "I like apples.",
+        explanation: "回答 food 问题时，需要说出具体食物。",
+        errorType: "答非所问",
         criteria: speakingScores({
-          discourseManagement: { score: 2, feedback: "闇€瑕佸惉鍒?food锛屽苟鐢ㄩ鐗╄瘝鍥炵瓟銆? },
-          interactiveCommunication: { score: 2, feedback: "娌℃湁鍥炵瓟 What food do you like? 鐨勬牳蹇冧俊鎭€? },
-          globalAchievement: { score: 3, feedback: "闇€瑕佺敤椋熺墿璇嶆眹瀹屾垚浠诲姟銆? },
+          discourseManagement: { score: 2, feedback: "需要听到 food，并用食物词回答。" },
+          interactiveCommunication: { score: 2, feedback: "没有回答 What food do you like? 的核心信息。" },
+          globalAchievement: { score: 3, feedback: "需要用食物词汇完成任务。" },
         }),
       };
     }
@@ -313,54 +314,25 @@ function getMockDialogueRuleResult(question: string, answer: string) {
 
   return {
     isCorrect: true,
-    feedback: "鍥炵瓟涓嶉敊锛岃〃杈炬竻妤氾紝涔熷洖绛斾簡褰撳墠闂銆?,
+    feedback: "回答不错，表达清楚，也回答了当前问题。",
     criteria: speakingScores({
-      grammarVocabulary: { score: 4, feedback: "鍙ュ瀷鍜岃瘝姹囦娇鐢ㄥ噯纭€? },
-      discourseManagement: { score: 4, feedback: "鍚噦闂锛屽苟鑳界敤鐭彞浣滅瓟銆? },
-      interactiveCommunication: { score: 5, feedback: "鑳界洿鎺ュ洖搴斿綋鍓嶉棶棰橈紝浜掑姩琛ㄧ幇寰堝ソ銆? },
-      globalAchievement: { score: 4, feedback: "瀹屾垚鏈疆灏戝効鍙ｈ浠诲姟銆? },
+      grammarVocabulary: { score: 4, feedback: "句型和词汇使用准确。" },
+      discourseManagement: { score: 4, feedback: "听懂问题，并能用短句作答。" },
+      interactiveCommunication: { score: 5, feedback: "能直接回应当前问题，互动表现很好。" },
+      globalAchievement: { score: 4, feedback: "完成本轮少儿口语任务。" },
     }),
   };
 }
 
-function getFastDialogueReply(question: string, answer: string) {
-  const normalizedQuestion = question.trim().toLowerCase();
-  const normalizedAnswer = answer.trim().toLowerCase();
-
-  if (normalizedQuestion.includes("what food do you like")) {
-    if (normalizedAnswer.includes("pizza")) return "Great job! Pizza is yummy. Do you like cheese on it?";
-    if (normalizedAnswer.includes("sandwich")) return "Nice. A sandwich is good. Do you like eggs in it?";
-    if (normalizedAnswer.includes("bread")) return "Good answer. Bread is nice. Do you like to eat it with jam?";
-    if (normalizedAnswer.includes("watermelon")) return "Great job! Watermelon is so yummy. Do you like to eat it in summer?";
-    if (normalizedAnswer.includes("milk")) return "Good answer. Do you drink milk every day?";
-    if (normalizedAnswer.includes("banana")) return "Great. Bananas are healthy. Do you like yellow bananas?";
-    if (normalizedAnswer.includes("apple")) return "Nice answer. Apples are yummy. Do you like red apples?";
-  }
-
-  if (normalizedQuestion.includes("do you like milk")) {
-    return normalizedAnswer.includes("don't") || normalizedAnswer.includes("no")
-      ? "Good answer. You said it clearly."
-      : "Good answer. Milk is healthy.";
-  }
-
-  if (normalizedQuestion.includes("what fruit do you like")) {
-    if (normalizedAnswer.includes("watermelon")) return "Great. Watermelon is a good fruit for summer.";
-    if (normalizedAnswer.includes("banana")) return "Great. Bananas are a good fruit.";
-    if (normalizedAnswer.includes("apple")) return "Great. Apples are a good fruit.";
-  }
-
-  return "Good answer. Let's continue.";
-}
-
-function buildDialogueFeedback(question: string, answer: string, reply: string, mistakes: BackendGrammarMistake[]) {
-  const ruleResult = getMockDialogueRuleResult(question, answer);
+function mergeDialogueFeedback(question: string, answer: string, reply: string, mistakes: BackendGrammarMistake[]) {
+  const ruleResult = getDialogueRuleResult(question, answer);
 
   if (mistakes.length > 0) {
     const firstMistake = mistakes[0];
     return {
       ...ruleResult,
       isCorrect: false,
-      feedback: `${reply} 鍙﹀锛岃繖閲屽缓璁 ${firstMistake.suggestion}`,
+      feedback: `${reply} 另外，这里建议说 ${firstMistake.suggestion}`,
       correctedSentence: firstMistake.suggestion,
       explanation: firstMistake.explanation,
       errorType: firstMistake.error_type,
@@ -373,10 +345,10 @@ function buildDialogueFeedback(question: string, answer: string, reply: string, 
   };
 }
 
-function getMockStudyReport(input: { tasks: PracticeTask[]; errors: ErrorSentence[] }): StudyReport {
+function buildDemoStudyReport(input: { tasks: PracticeTask[]; errors: ErrorSentence[] }): StudyReport {
   const completedTasks = input.tasks
     .filter((task) => task.status === "completed")
-    .map((task) => (task.type === "review" ? "閿欏彞澶嶇粌" : task.title));
+    .map((task) => (task.type === "review" ? "错句复练" : task.title));
   const masteredSentences = input.errors
     .filter((error) => error.status === "mastered")
     .map((error) => error.correctedSentence);
@@ -385,30 +357,37 @@ function getMockStudyReport(input: { tasks: PracticeTask[]; errors: ErrorSentenc
     .map((error) => error.correctedSentence);
 
   return {
-    id: "report-demo-today",
+    id: "report-demo-fallback",
     date: new Date().toISOString().slice(0, 10),
-    summary: `浠婃棩瀹屾垚 ${completedTasks.length}/${input.tasks.length} 椤逛换鍔★紝宸叉帉鎻?${masteredSentences.length} 鏉″叧閿〃杈俱€俙,
+    summary: `演示兜底报告：今日完成 ${completedTasks.length}/${input.tasks.length} 项任务，已掌握 ${masteredSentences.length} 条关键表达。`,
     completedTasks,
     masteredSentences,
     errorsToReview,
     speakingScores: speakingScores({
       grammarVocabulary: {
         score: errorsToReview.length ? 3 : 4,
-        feedback: errorsToReview.length ? "浠嶉渶澶嶇粌椋熺墿璇嶆眹銆佸鏁板拰鍚﹀畾鍙ャ€? : "鏈崟鍏冩牳蹇冭瘝姹囧拰鍙ュ瀷鎺屾彙杈冪ǔ瀹氥€?,
+        feedback: errorsToReview.length ? "仍需复练食物词汇、复数和否定句。" : "本单元核心词汇和句型掌握较稳定。",
       },
-      discourseManagement: { score: 4, feedback: "鑳藉鍚噦 Food 涓婚鐨勭畝鍗曢棶棰樺苟浣滅瓟銆? },
-      pronunciation: { score: 4, feedback: "璺熻琛ㄧ幇娓呮锛屽悗缁彲鎺ョ湡瀹炲綍闊宠瘎鍒嗐€? },
-      interactiveCommunication: { score: 4, feedback: "鑳藉弬涓?Food 涓婚闂瓟锛屼簰鍔ㄤ俊蹇冭緝濂姐€? },
-      globalAchievement: { score: completedTasks.length >= 3 ? 4 : 3, feedback: "鏈疆 Speaking 鍙幏寰楃害 3-4 涓浘鐗岀殑琛ㄧ幇銆? },
+      discourseManagement: { score: 4, feedback: "能围绕 Food 主题理解并回应问题。" },
+      pronunciation: { score: errorsToReview.length ? 3 : 4, feedback: "跟读表现基本清楚，建议继续关注尾音和重音。" },
+      interactiveCommunication: { score: 4, feedback: "能参与 Food 主题问答，互动信心较好。" },
+      globalAchievement: { score: completedTasks.length >= 3 ? 4 : 3, feedback: "本轮口语闭环已经基本完成。" },
     }),
-    aiSuggestion: "涓嬩竴杞缓璁户缁粌涔?food 涓婚闂瓟锛岄噸鐐瑰叧娉ㄥ悕璇嶅鏁般€佸惁瀹氬彞鍜屽彂闊虫竻鏅板害銆?,
-    parentFriendlyComment: "瀛╁瓙宸茬粡鑳藉鍥寸粫椋熺墿涓婚杩涜绠€鍗曡〃杈俱€傞亣鍒伴敊璇悗锛屽彲浠ラ€氳繃閿欏彞澶嶇粌閫愭淇锛屽缓璁瘡澶╀繚鎸?5-8 鍒嗛挓鍙ｈ缁冧範銆?,
+    aiStrengths: ["能围绕食物主题进行简单表达。"],
+    aiNextSteps: errorsToReview.length
+      ? [`优先复练：${errorsToReview.slice(0, 2).join(" / ")}`]
+      : ["下一轮可以增加更长句回答。"],
+    aiSuggestion: errorsToReview.length
+      ? `下一轮先复练 ${errorsToReview.slice(0, 2).join(" / ")}，再进入新的口语问答。`
+      : "下一轮建议尝试使用 because 补充原因，让回答更完整。",
+    parentFriendlyComment:
+      "孩子已经能围绕食物主题完成基础口语任务。建议每天保持 5-8 分钟短时练习，重点关注系统标出的待复练表达。",
   };
 }
 
 export async function generateTodayTasks(unit: Unit): Promise<PracticeTask[]> {
   await delay();
-  return getMockTasks(unit);
+  return buildDemoTasks(unit);
 }
 
 export async function analyzeReading(input: {
@@ -431,14 +410,16 @@ export async function analyzeReading(input: {
       completeness?: number;
       provider?: string;
     }>("/speech/score", {
-      audio_url: "mock://browser-recording",
+      audio_url: "browser-recording",
       text: input.targetText,
       audio_base64: scoredAudio?.audioBase64,
       audio_format: scoredAudio?.audioFormat,
     });
 
     const providerNote =
-      data.provider && data.provider !== "tencent_soe" ? `锛堝綋鍓嶈瘎鍒嗘潵婧愶細${data.provider}锛岃妫€鏌ヨ吘璁櫤鑱嗚繑鍥炰俊鎭€傦級` : "";
+      data.provider && data.provider !== "tencent_soe"
+        ? `（当前评分来源：${data.provider}。如果这里显示 mock，说明后端已启用演示兜底评分。）`
+        : "";
     const result = {
       score: data.score,
       feedback: providerNote ? `${data.feedback} ${providerNote}` : data.feedback,
@@ -450,7 +431,7 @@ export async function analyzeReading(input: {
         },
         discourseManagement: {
           score: Math.max(1, Math.min(5, Math.round(data.fluency / 20))),
-          feedback: data.fluency >= 85 ? "琛ㄨ揪鑺傚姣旇緝鑷劧銆? : "鑺傚杩樺彲浠ユ洿绋冲畾涓€浜涖€?,
+          feedback: data.fluency >= 85 ? "表达节奏比较自然。" : "节奏还可以更稳定一些。",
         },
       }),
     };
@@ -459,9 +440,9 @@ export async function analyzeReading(input: {
     return result;
   } catch (error) {
     await delay();
-    const fallback = getMockReadingAnalysis(input.targetText, input.userText);
+    const fallback = buildDemoReadingAnalysis(input.targetText, input.userText);
     const message = error instanceof Error ? error.message : "unknown error";
-    fallback.feedback = `鍚庣鍙ｈ璇勫垎鏈垚鍔燂紝褰撳墠鏄剧ず婕旂ず璇勫垎銆傚師鍥狅細${message}`;
+    fallback.feedback = `后端口语评分暂不可用，当前显示演示兜底评分。原因：${message}`;
     void saveLearningSession("reading", `Reading practice: ${input.targetText}`, fallback.score);
     return fallback;
   }
@@ -515,37 +496,30 @@ export async function analyzeDialogueAnswer(input: {
   errorType?: string;
   criteria: SpeakingCriterionScore[];
 }> {
-  const ruleResult = getMockDialogueRuleResult(input.question, input.answer);
+  const ruleResult = getDialogueRuleResult(input.question, input.answer);
 
   try {
-    const history = [{ role: "ai", content: input.question }];
-    const chatRequest = postJson<{ reply: string }>("/tutor/chat", {
-      message: input.answer,
-      history,
-      level: "kids",
-    });
-
-    if (ruleResult.isCorrect) {
-      const result = { ...ruleResult, feedback: getFastDialogueReply(input.question, input.answer) };
-      void chatRequest.catch(() => undefined);
-      void saveLearningSession("dialogue", `Dialogue answer: ${input.answer}`, 90);
-      return result;
-    }
-
     const [chatData, errorData] = await Promise.all([
-      chatRequest,
+      postJson<{ reply: string }>("/tutor/chat", {
+        message: input.answer,
+        history: [{ role: "ai", content: input.question }],
+        level: "kids",
+      }),
       postJson<{ mistakes: BackendGrammarMistake[] }>("/analyze/error", {
         text: input.answer,
       }),
     ]);
 
-    const result = buildDialogueFeedback(input.question, input.answer, chatData.reply, errorData.mistakes);
+    const result = mergeDialogueFeedback(input.question, input.answer, chatData.reply, errorData.mistakes);
     void saveLearningSession("dialogue", `Dialogue answer: ${input.answer}`, result.isCorrect ? 90 : 78);
     return result;
   } catch {
     await delay();
     void saveLearningSession("dialogue", `Dialogue answer: ${input.answer}`, ruleResult.isCorrect ? 90 : 78);
-    return ruleResult;
+    return {
+      ...ruleResult,
+      feedback: `演示兜底反馈：${ruleResult.feedback}`,
+    };
   }
 }
 
@@ -559,7 +533,7 @@ export async function generateReviewSteps(error: ErrorSentence): Promise<{
   return {
     shadowingText: error.correctedSentence,
     substitutionPrompts:
-      error.errorType === "鍚嶈瘝鍗曞鏁?
+      error.errorType === "名词单复数"
         ? ["I like bananas.", "I like sandwiches.", "I like pizzas."]
         : ["He likes apples.", "She likes milk.", "He likes sandwiches."],
     followUpQuestion: error.question ?? "What fruit do you like?",
@@ -579,7 +553,7 @@ export async function checkReviewStep(input: {
   if (input.stepIndex === 0) {
     return {
       passed: true,
-      feedback: "AI 妫€鏌ラ€氳繃锛氳窡璇诲唴瀹规竻妤氾紝鐩爣鍙ュ瓙宸茬粡璇撮『浜嗐€?,
+      feedback: "演示复练检查：跟读内容清楚，目标句子已经读顺了。",
     };
   }
 
@@ -588,8 +562,8 @@ export async function checkReviewStep(input: {
     return {
       passed: usesTargetPattern,
       feedback: usesTargetPattern
-        ? "AI 妫€鏌ラ€氳繃锛氳兘鎶婃纭彞鍨嬭縼绉诲埌鏂拌瘝姹囬噷銆?
-        : "杩橀渶瑕佸啀缁冧竴娆★細璇蜂娇鐢ㄦ湰棰樼殑鐩爣鍙ュ瀷瀹屾垚鏇挎崲閫犲彞銆?,
+        ? "演示复练检查：能把正确句型迁移到新词汇里。"
+        : "还需要再练一次：请使用本题的目标句型完成替换造句。",
     };
   }
 
@@ -597,8 +571,8 @@ export async function checkReviewStep(input: {
   return {
     passed: isUsingCorrectSentence,
     feedback: isUsingCorrectSentence
-      ? "AI 妫€鏌ラ€氳繃锛氬洖绛旇嚜鐒讹紝骞朵笖浣跨敤浜嗘纭〃杈俱€?
-      : `杩橀渶瑕佸啀缁冧竴娆★細璇峰敖閲忚鎴?${input.error.correctedSentence}`,
+      ? "演示复练检查：回答自然，并且使用了正确表达。"
+      : `还需要再练一次：请尽量说成 ${input.error.correctedSentence}`,
   };
 }
 
@@ -624,7 +598,7 @@ export async function generateStudyReport(input: {
       session_data: {
         session_type: "daily_report",
         unit_id: "unit-3-food",
-        summary: `浠婃棩浠诲姟 ${completedCount}/${input.tasks.length} 椤瑰畬鎴愶紱閿欏彞 ${input.errors.length} 鏉★紱宸叉帉鎻?${masteredCount} 鏉★紱浠嶉渶澶嶇粌 ${pendingErrorCount} 鏉°€備笉瑕佺敓鎴愭纭巼銆俙,
+        summary: `今日任务 ${completedCount}/${input.tasks.length} 项完成；错句 ${input.errors.length} 条；已掌握 ${masteredCount} 条；仍需复练 ${pendingErrorCount} 条。不要生成正确率。`,
         score: completedCount,
         events: [
           ...input.tasks.map((task) => ({
@@ -650,7 +624,7 @@ export async function generateStudyReport(input: {
 
     const completedTasks = input.tasks
       .filter((task) => task.status === "completed")
-      .map((task) => (task.type === "review" ? "閿欏彞澶嶇粌" : task.title));
+      .map((task) => (task.type === "review" ? "错句复练" : task.title));
     const masteredSentences = input.errors
       .filter((error) => error.status === "mastered")
       .map((error) => error.correctedSentence);
@@ -668,28 +642,28 @@ export async function generateStudyReport(input: {
       speakingScores: speakingScores({
         grammarVocabulary: {
           score: errorsToReview.length ? 3 : 4,
-          feedback: data.report.next_steps[0] ?? "寤鸿缁х画宸╁浐璇嶆眹鍜屽彞鍨嬨€?,
+          feedback: data.report.next_steps[0] ?? "建议继续巩固词汇和句型。",
         },
         discourseManagement: {
           score: 4,
-          feedback: data.report.strengths[0] ?? "鑳藉鍥寸粫涓婚鐞嗚В骞跺洖搴旈棶棰樸€?,
+          feedback: data.report.strengths[0] ?? "能够围绕主题理解并回应问题。",
         },
         pronunciation: {
           score: errorsToReview.length ? 3 : 4,
-          feedback: errorsToReview.length ? "浠嶆湁琛ㄨ揪闇€瑕佽繘鍏ヤ笅涓€杞缁冦€? : "鏈疆鍙戦煶琛ㄧ幇姣旇緝绋冲畾銆?,
+          feedback: errorsToReview.length ? "仍有表达需要进入下一轮复练。" : "本轮发音表现比较稳定。",
         },
         interactiveCommunication: {
           score: 4,
-          feedback: data.report.strengths[1] ?? "浜掑姩琛ㄧ幇鑷劧锛岃兘瀹屾垚鍩烘湰闂瓟銆?,
+          feedback: data.report.strengths[1] ?? "互动表现自然，能完成基本问答。",
         },
         globalAchievement: {
           score: completedTasks.length >= 3 ? 4 : 3,
-          feedback: `鍚庣宸茬疮璁?${data.report.related_session_count} 鏉″涔犺褰曘€俙,
+          feedback: `后端已累计 ${data.report.related_session_count} 条学习记录。`,
         },
       }),
       aiStrengths: data.report.strengths,
       aiNextSteps: data.report.next_steps,
-      aiSuggestion: data.report.next_steps.join("锛?) || "寤鸿缁х画瀹屾垚涓嬩竴杞彛璇粌涔犮€?,
+      aiSuggestion: data.report.next_steps.join("；") || "建议继续完成下一轮口语练习。",
       parentFriendlyComment: data.report.parent_comment,
     };
 
@@ -697,7 +671,7 @@ export async function generateStudyReport(input: {
     return report;
   } catch {
     await delay();
-    const fallback = getMockStudyReport(input);
+    const fallback = buildDemoStudyReport(input);
     void saveLearningSession("report", "Study report generated.", fallback.completedTasks.length);
     return fallback;
   }

@@ -442,7 +442,7 @@ export default function PracticePage() {
           </div>
         ) : (
           <p className="mt-4 flex min-h-32 items-center rounded-2xl bg-slate-50 p-4 text-sm leading-7 text-slate-600">
-            系统会在录音结束后自动提交分析，这里会显示简短的 mock AI 反馈。
+            系统会在录音结束后自动提交分析。真实接口不可用时，会明确显示演示兜底反馈。
           </p>
         )}
       </Card>
@@ -471,11 +471,6 @@ function getRecordingLimitSeconds(item: PracticeItem) {
   return Math.max(5, Math.min(10, estimatedSpeakingSeconds));
 }
 
-function getPlaybackFallbackMs(text: string) {
-  const words = text.trim().split(/\s+/).filter(Boolean).length;
-  return Math.max(1400, Math.ceil((words / 1.8 + 0.8) * 1000));
-}
-
 function getSpokenWordCount(text: string) {
   return Math.max(text.trim().split(/\s+/).filter(Boolean).length, 1);
 }
@@ -496,6 +491,7 @@ function getTextParts(text: string): TextPart[] {
   if (cursor < text.length) parts.push({ text: text.slice(cursor) });
   return parts;
 }
+
 function shouldOpenReportAfterTask(
   completedType: "word" | "sentence",
   tasks: { type: string; status: string }[],

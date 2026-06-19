@@ -57,7 +57,3 @@ def health() -> dict:
 
 
 app.include_router(api_router, prefix="/api/v1")
-
-# Compatibility for already-deployed frontend bundles that were built with the
-# Railway domain but without the /api/v1 suffix.
-app.include_router(api_router)
