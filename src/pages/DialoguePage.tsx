@@ -7,13 +7,13 @@ import { playTeacherSpeech, stopTeacherSpeech, warmTeacherSpeech } from "../serv
 import { useLearning } from "../state/LearningContext";
 
 type DialoguePhase = "teacher" | "listening" | "recognizing" | "retry" | "guidance" | "feedback" | "completed";
+
 type SceneMessage = {
   id: string;
   role: "teacher" | "student" | "system";
   content: string;
   highlight?: string;
 };
-type AfterFeedbackAction = "ask_followup" | "next_preset";
 
 function getDemoTranscript(question: string) {
   if (question.includes("milk")) return "I don't like milk.";
@@ -27,29 +27,44 @@ function getGuidance(referenceAnswer: string) {
 
 function getAnswerRecordingMs(question: string, isFollowUp = false) {
   const words = question.trim().split(/\s+/).filter(Boolean).length;
-  const baseMs = Math.ceil((words / 1.25 + 4.5) * 1000);
-  return Math.max(isFollowUp ? 11000 : 8500, baseMs);
+  const baseMs = Math.ceil((words / 1.2 + 5) * 1000);
+  return Math.max(isFollowUp ? 12000 : 9500, baseMs);
 }
 
 function getMinimumListenMs(isFollowUp = false) {
-  return isFollowUp ? 6500 : 4800;
+  return isFollowUp ? 7000 : 5200;
 }
 
 function getSilenceStopMs(isFollowUp = false) {
-  return isFollowUp ? 2600 : 2200;
+  return isFollowUp ? 2800 : 2300;
 }
 
 function extractFollowUpQuestion(reply: string) {
   const normalized = reply.replace(/\s+/g, " ").trim();
-  const matches = [...normalized.matchAll(/([^.!?。！？]*[?？])/g)]
-    .map((match) => match[1].trim())
-    .filter((question) => question.length > 3);
-  return matches.at(-1) ?? "";
+  const englishQuestionMark = normalized.lastIndexOf("?");
+  const chineseQuestionMark = normalized.lastIndexOf("？");
+  const end = Math.max(englishQuestionMark, chineseQuestionMark);
+  if (end < 0) return "";
+
+  const sentenceBreaks = ".!?。！？";
+  let start = end - 1;
+  while (start >= 0 && !sentenceBreaks.includes(normalized[start])) start -= 1;
+
+  const question = normalized.slice(start + 1, end + 1).trim();
+  return question.length > 3 ? question : "";
 }
 
 function removeFollowUpQuestion(reply: string, followUpQuestion: string) {
-  if (!followUpQuestion) return reply;
-  return reply.replace(followUpQuestion, "").replace(/\s+/g, " ").replace(/\s+([.!?])/g, "$1").trim();
+  if (!followUpQuestion) return reply.trim();
+  return reply
+    .replace(followUpQuestion, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([.!?])/g, "$1")
+    .trim();
+}
+
+function cleanQuestionForSpeech(question: string) {
+  return question.replace(/^[^A-Za-z0-9"']+/, "").trim();
 }
 
 function getWebkitAudioContext(): typeof AudioContext | undefined {
@@ -59,115 +74,137 @@ function getWebkitAudioContext(): typeof AudioContext | undefined {
 export default function DialoguePage() {
   const { currentUnit, tasks, errors, submitDialogueAnswer } = useLearning();
   const navigate = useNavigate();
+  const questions = currentUnit.aiQuestions;
+
   const [questionIndex, setQuestionIndex] = useState(0);
   const [phase, setPhase] = useState<DialoguePhase>("teacher");
-  const [attempt, setAttempt] = useState(0);
-  const [guidanceGiven, setGuidanceGiven] = useState(false);
-  const [postGuidanceAttempt, setPostGuidanceAttempt] = useState(0);
+  const [, setAttempt] = useState(0);
+  const [, setGuidanceGiven] = useState(false);
+  const [, setPostGuidanceAttempt] = useState(0);
   const [transcript, setTranscript] = useState("");
   const [autoAdvanceSeconds, setAutoAdvanceSeconds] = useState<number | null>(null);
   const [sceneMessages, setSceneMessages] = useState<SceneMessage[]>([]);
   const [followUpQuestion, setFollowUpQuestion] = useState("");
-  const [, setAfterFeedbackAction] = useState<AfterFeedbackAction>("next_preset");
+
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const timersRef = useRef<number[]>([]);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const silenceAnalyserRef = useRef<AnalyserNode | null>(null);
+  const silenceFrameRef = useRef<number | null>(null);
+  const silenceStartedAtRef = useRef<number | null>(null);
+  const listeningStartedAtRef = useRef<number>(0);
   const cycleRef = useRef(0);
   const attemptRef = useRef(0);
   const guidanceGivenRef = useRef(false);
   const postGuidanceAttemptRef = useRef(0);
-  const followUpQuestionRef = useRef("");
   const activeQuestionRef = useRef("");
-  const afterFeedbackActionRef = useRef<AfterFeedbackAction>("next_preset");
-  const timersRef = useRef<number[]>([]);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const recordingChunksRef = useRef<BlobPart[]>([]);
-  const streamRef = useRef<MediaStream | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const silenceTimerRef = useRef<number | null>(null);
-  const silenceCheckRef = useRef<number | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const followUpQuestionRef = useRef("");
+  const questionIndexRef = useRef(0);
 
-  const questions = currentUnit.aiQuestions;
-  const currentQuestion = questions[questionIndex];
+  const currentQuestion = questions[questionIndex] ?? questions[0] ?? "What food do you like?";
   const activeQuestion = followUpQuestion || currentQuestion;
   activeQuestionRef.current = activeQuestion;
+  followUpQuestionRef.current = followUpQuestion;
+  questionIndexRef.current = questionIndex;
+
   const referenceAnswer = useMemo(() => getDemoTranscript(activeQuestion), [activeQuestion]);
   const guidance = useMemo(() => getGuidance(referenceAnswer), [referenceAnswer]);
 
-  const clearTimers = () => {
+  function clearTimers() {
     timersRef.current.forEach((timer) => window.clearTimeout(timer));
     timersRef.current = [];
-  };
+  }
 
-  const clearSilenceDetection = () => {
-    if (silenceTimerRef.current) {
-      window.clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = null;
-    }
-    if (silenceCheckRef.current) {
-      window.clearInterval(silenceCheckRef.current);
-      silenceCheckRef.current = null;
-    }
-    void audioContextRef.current?.close();
-    audioContextRef.current = null;
-  };
-
-  const schedule = (callback: () => void, ms: number) => {
-    const timer = window.setTimeout(callback, ms);
+  function schedule(callback: () => void, delayMs: number) {
+    const timer = window.setTimeout(callback, delayMs);
     timersRef.current.push(timer);
     return timer;
-  };
+  }
 
-  const stopCurrentMedia = () => {
+  function clearSilenceDetection() {
+    if (silenceFrameRef.current) {
+      cancelAnimationFrame(silenceFrameRef.current);
+      silenceFrameRef.current = null;
+    }
+    silenceStartedAtRef.current = null;
+    silenceAnalyserRef.current = null;
+    if (audioContextRef.current) {
+      void audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+  }
+
+  function stopCurrentMedia() {
+    clearSilenceDetection();
     if (recorderRef.current && recorderRef.current.state !== "inactive") {
-      recorderRef.current.onstop = null;
       recorderRef.current.stop();
     }
     recorderRef.current = null;
-    recordingChunksRef.current = [];
-    clearSilenceDetection();
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
-  };
+  }
 
-  const speak = (text: string, onDone?: () => void) => {
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
+  function speak(text: string, onDone?: () => void) {
+    if (!text.trim()) {
       onDone?.();
+      return;
+    }
+    void playTeacherSpeech(text, { onDone });
+  }
+
+  function addMessage(role: SceneMessage["role"], content: string, shouldSpeak = false, onDone?: () => void) {
+    const message: SceneMessage = {
+      id: `${role}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      role,
+      content,
     };
+    setSceneMessages((messages) => [...messages, message]);
 
-    void playTeacherSpeech(text, finish);
-  };
+    if (shouldSpeak) {
+      speak(content, onDone);
+      return;
+    }
+    onDone?.();
+  }
 
-  const addMessage = (
-    role: SceneMessage["role"],
-    content: string,
-    shouldSpeak = role !== "student",
-    onDone?: () => void,
-    highlight?: string,
-  ) => {
-    setSceneMessages((messages) => [...messages, { id: `${role}-${Date.now()}-${Math.random()}`, role, content, highlight }]);
-    if (shouldSpeak) speak(content, onDone);
-    else onDone?.();
-  };
+  function addGuidanceMessage(content: string, highlight: string, onDone?: () => void) {
+    const message: SceneMessage = {
+      id: `system-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      role: "system",
+      content,
+      highlight,
+    };
+    setSceneMessages((messages) => [...messages, message]);
+    speak(content, onDone);
+  }
 
-  const askQuestion = (cycleId: number, questionText = activeQuestion) => {
-    activeQuestionRef.current = questionText;
+  function askQuestion(cycleId: number, questionText = activeQuestionRef.current) {
+    if (cycleRef.current !== cycleId) return;
+    const question = cleanQuestionForSpeech(questionText);
+    activeQuestionRef.current = question;
     setPhase("teacher");
     setTranscript("");
     stopCurrentMedia();
-    addMessage("teacher", questionText, true, () => {
-      if (cycleRef.current === cycleId) startListening(cycleId);
+    warmTeacherSpeech(question).catch(() => undefined);
+    addMessage("teacher", question, true, () => {
+      if (cycleRef.current !== cycleId) return;
+      schedule(() => startListening(cycleId), 450);
     });
-  };
+  }
 
-  const startListening = async (cycleId: number) => {
+  async function startListening(cycleId: number) {
     if (cycleRef.current !== cycleId) return;
     setPhase("listening");
     setTranscript("");
+    stopCurrentMedia();
 
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      schedule(() => recognizeAnswer(cycleId, null), 1200);
+    const isFollowUp = Boolean(followUpQuestionRef.current);
+    const recordingMs = getAnswerRecordingMs(activeQuestionRef.current, isFollowUp);
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      schedule(() => recognizeAnswer(cycleId, null), recordingMs);
       return;
     }
 
@@ -180,116 +217,108 @@ export default function DialoguePage() {
 
       streamRef.current = stream;
       const recorder = createAudioRecorder(stream);
+      const chunks: Blob[] = [];
       recorderRef.current = recorder;
-      recordingChunksRef.current = [];
+      listeningStartedAtRef.current = Date.now();
 
       recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) recordingChunksRef.current.push(event.data);
+        if (event.data.size > 0) chunks.push(event.data);
       };
       recorder.onstop = () => {
-        const audioBlob =
-          recordingChunksRef.current.length > 0
-            ? new Blob(recordingChunksRef.current, { type: recorder.mimeType || "audio/webm" })
-            : null;
-        recordingChunksRef.current = [];
-        clearSilenceDetection();
-        stream.getTracks().forEach((track) => track.stop());
-        streamRef.current = null;
-        if (cycleRef.current === cycleId) void recognizeAnswer(cycleId, audioBlob);
+        const audioBlob = chunks.length ? new Blob(chunks, { type: recorder.mimeType }) : null;
+        stopCurrentMedia();
+        recognizeAnswer(cycleId, audioBlob);
       };
 
       recorder.start();
-      const isFollowUp = Boolean(followUpQuestionRef.current);
-      startSilenceDetection(stream, recorder, {
-        minimumListenMs: getMinimumListenMs(isFollowUp),
-        silenceStopMs: getSilenceStopMs(isFollowUp),
-      });
+      startSilenceDetection(stream, cycleId, isFollowUp);
       schedule(() => {
+        if (cycleRef.current !== cycleId) return;
         if (recorder.state !== "inactive") recorder.stop();
-      }, getAnswerRecordingMs(activeQuestionRef.current || activeQuestion, isFollowUp));
+      }, recordingMs);
     } catch {
-      schedule(() => recognizeAnswer(cycleId, null), 1200);
+      schedule(() => recognizeAnswer(cycleId, null), recordingMs);
     }
-  };
+  }
 
-  const startSilenceDetection = (
-    stream: MediaStream,
-    recorder: MediaRecorder,
-    options: { minimumListenMs: number; silenceStopMs: number },
-  ) => {
-    const AudioContextClass = window.AudioContext || getWebkitAudioContext();
+  function startSilenceDetection(stream: MediaStream, cycleId: number, isFollowUp: boolean) {
+    const AudioContextClass = window.AudioContext ?? getWebkitAudioContext();
     if (!AudioContextClass) return;
 
     const audioContext = new AudioContextClass();
-    audioContextRef.current = audioContext;
-    const source = audioContext.createMediaStreamSource(stream);
     const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 512;
+    const source = audioContext.createMediaStreamSource(stream);
+    const data = new Uint8Array(analyser.fftSize);
+    const minimumListenMs = getMinimumListenMs(isFollowUp);
+    const silenceStopMs = getSilenceStopMs(isFollowUp);
+
     source.connect(analyser);
-    const samples = new Uint8Array(analyser.fftSize);
-    const startedAt = Date.now();
+    analyser.fftSize = 1024;
+    audioContextRef.current = audioContext;
+    silenceAnalyserRef.current = analyser;
 
-    silenceCheckRef.current = window.setInterval(() => {
-      analyser.getByteTimeDomainData(samples);
-      let sum = 0;
-      for (const sample of samples) {
-        const value = sample - 128;
-        sum += value * value;
-      }
-      const volume = Math.sqrt(sum / samples.length);
-      const minimumListenMs = Date.now() - startedAt > options.minimumListenMs;
+    const checkSilence = () => {
+      if (cycleRef.current !== cycleId || recorderRef.current?.state !== "recording") return;
+      analyser.getByteTimeDomainData(data);
+      const volume = data.reduce((sum, value) => sum + Math.abs(value - 128), 0) / data.length;
+      const listenedMs = Date.now() - listeningStartedAtRef.current;
 
-      if (volume < 5 && minimumListenMs) {
-        if (!silenceTimerRef.current) {
-          silenceTimerRef.current = window.setTimeout(() => {
-            if (recorder.state !== "inactive") recorder.stop();
-          }, options.silenceStopMs);
+      if (listenedMs > minimumListenMs && volume < 2.4) {
+        silenceStartedAtRef.current ??= Date.now();
+        if (Date.now() - silenceStartedAtRef.current > silenceStopMs) {
+          recorderRef.current?.stop();
+          return;
         }
-      } else if (silenceTimerRef.current) {
-        window.clearTimeout(silenceTimerRef.current);
-        silenceTimerRef.current = null;
+      } else {
+        silenceStartedAtRef.current = null;
       }
-    }, 120);
-  };
 
-  const recognizeAnswer = async (cycleId: number, audioBlob?: Blob | null) => {
+      silenceFrameRef.current = requestAnimationFrame(checkSilence);
+    };
+
+    silenceFrameRef.current = requestAnimationFrame(checkSilence);
+  }
+
+  async function recognizeAnswer(cycleId: number, audioBlob: Blob | null) {
     if (cycleRef.current !== cycleId) return;
     setPhase("recognizing");
 
     const nextAttempt = attemptRef.current + 1;
     attemptRef.current = nextAttempt;
     setAttempt(nextAttempt);
-    const hasGuidance = guidanceGivenRef.current;
-    const nextPostGuidanceAttempt = hasGuidance ? postGuidanceAttemptRef.current + 1 : 0;
-    postGuidanceAttemptRef.current = nextPostGuidanceAttempt;
-    setPostGuidanceAttempt(nextPostGuidanceAttempt);
 
-    let recognizedText = "";
-
-    if (audioBlob && audioBlob.size > 0) {
-      try {
-        recognizedText = await recognizeSpeech({
-          audioBlob,
-        fileName: buildAudioFileName(`dialogue-q${questionIndex + 1}`, audioBlob.type),
-        });
-      } catch {
-        recognizedText = "";
-      }
+    let text = "";
+    try {
+      text = audioBlob
+        ? await recognizeSpeech({
+            audioBlob,
+            fileName: buildAudioFileName("dialogue-answer", audioBlob.type),
+          })
+        : "";
+    } catch {
+      text = "";
     }
 
     if (cycleRef.current !== cycleId) return;
-    if (!recognizedText) {
-      setTranscript("");
-      if (hasGuidance) {
-        setPhase("completed");
-        addMessage("system", "We will stop here and return to today's tasks.", true, () => {
-          if (cycleRef.current === cycleId) navigate("/tasks");
-        });
-        return;
+
+    if (!text.trim()) {
+      if (guidanceGivenRef.current) {
+        const nextPostGuidanceAttempt = postGuidanceAttemptRef.current + 1;
+        postGuidanceAttemptRef.current = nextPostGuidanceAttempt;
+        setPostGuidanceAttempt(nextPostGuidanceAttempt);
+
+        if (nextPostGuidanceAttempt >= 2) {
+          setPhase("completed");
+          addMessage("system", "We will stop this dialogue for now. Please try again later.", true, () => {
+            navigate("/");
+          });
+          return;
+        }
       }
-      if (!hasGuidance && nextAttempt >= 3) {
+
+      if (!guidanceGivenRef.current && nextAttempt >= 3) {
         setPhase("guidance");
-        addMessage("system", guidance, true, () => {
+        addGuidanceMessage(guidance, referenceAnswer, () => {
           if (cycleRef.current !== cycleId) return;
           guidanceGivenRef.current = true;
           setGuidanceGiven(true);
@@ -297,102 +326,100 @@ export default function DialoguePage() {
           postGuidanceAttemptRef.current = 0;
           setAttempt(0);
           setPostGuidanceAttempt(0);
-          const questionText = activeQuestionRef.current || activeQuestion;
-          addMessage("teacher", questionText, true, () => {
-            if (cycleRef.current === cycleId) void startListening(cycleId);
-          });
-        }, referenceAnswer);
-      } else {
-        setPhase("retry");
-        addMessage("system", "I couldn't hear you clearly. Please answer again in English.", true, () => {
-          if (cycleRef.current === cycleId) void startListening(cycleId);
+          schedule(() => askQuestion(cycleId, activeQuestionRef.current), 900);
         });
+        return;
       }
+
+      setPhase("retry");
+      addMessage("system", "I couldn't hear you clearly. Please answer again in English.", true, () => {
+        if (cycleRef.current !== cycleId) return;
+        schedule(() => startListening(cycleId), 700);
+      });
       return;
     }
 
-    setTranscript(recognizedText);
-    addMessage("student", recognizedText, false);
-    await submitRecognizedAnswer(cycleId, recognizedText);
-  };
+    setTranscript(text);
+    addMessage("student", text);
+    await submitRecognizedAnswer(cycleId, text);
+  }
 
-  const submitRecognizedAnswer = async (cycleId: number, answer: string) => {
+  async function submitRecognizedAnswer(cycleId: number, answer: string) {
+    const answeredQuestion = activeQuestionRef.current;
+    const nextPresetQuestion = questions[questionIndexRef.current + 1] ?? "本轮对话完成";
+    const analysis = await submitDialogueAnswer(answer, answeredQuestion, nextPresetQuestion);
     if (cycleRef.current !== cycleId) return;
-    setPhase("recognizing");
-    const answeredQuestion = activeQuestionRef.current || activeQuestion;
-    const analysis = await submitDialogueAnswer(answer, answeredQuestion, questions[questionIndex + 1] ?? "本轮对话完成");
-    if (cycleRef.current !== cycleId) return;
+
     setPhase("feedback");
-    const nextFollowUp = !followUpQuestionRef.current ? extractFollowUpQuestion(analysis.feedback) : "";
-    const feedbackText = removeFollowUpQuestion(analysis.feedback, nextFollowUp);
-    if (nextFollowUp) {
-      followUpQuestionRef.current = nextFollowUp;
-      setFollowUpQuestion(nextFollowUp);
-      afterFeedbackActionRef.current = "ask_followup";
-      setAfterFeedbackAction("ask_followup");
+    attemptRef.current = 0;
+    guidanceGivenRef.current = false;
+    postGuidanceAttemptRef.current = 0;
+    setAttempt(0);
+    setGuidanceGiven(false);
+    setPostGuidanceAttempt(0);
+
+    const rawFollowUp = !followUpQuestionRef.current && analysis.isCorrect ? extractFollowUpQuestion(analysis.feedback) : "";
+    const spokenFollowUp = cleanQuestionForSpeech(rawFollowUp);
+    const feedbackText = removeFollowUpQuestion(analysis.feedback, rawFollowUp);
+
+    if (spokenFollowUp) {
+      followUpQuestionRef.current = spokenFollowUp;
+      setFollowUpQuestion(spokenFollowUp);
+      warmTeacherSpeech(spokenFollowUp).catch(() => undefined);
 
       const askFollowUp = () => {
         if (cycleRef.current !== cycleId) return;
-        attemptRef.current = 0;
-        setAttempt(0);
-        setTranscript("");
-        void warmTeacherSpeech(nextFollowUp);
-        askQuestion(cycleId, nextFollowUp);
+        askQuestion(cycleId, spokenFollowUp);
       };
 
       if (feedbackText) {
-        addMessage("teacher", feedbackText, true, () => schedule(askFollowUp, 250));
+        addMessage("teacher", feedbackText, true, () => schedule(askFollowUp, 950));
       } else {
-        askFollowUp();
+        schedule(askFollowUp, 950);
       }
       return;
-    } else {
-      afterFeedbackActionRef.current = "next_preset";
-      setAfterFeedbackAction("next_preset");
     }
+
+    if (!analysis.isCorrect) {
+      const retryQuestion = answeredQuestion;
+      const askAgain = () => {
+        if (cycleRef.current !== cycleId) return;
+        askQuestion(cycleId, retryQuestion);
+      };
+      addMessage("teacher", feedbackText || analysis.feedback, true, () => schedule(askAgain, 950));
+      return;
+    }
+
+    setFollowUpQuestion("");
+    followUpQuestionRef.current = "";
     addMessage("teacher", feedbackText || analysis.feedback, true, () => {
-      if (cycleRef.current === cycleId) setAutoAdvanceSeconds(1);
+      if (cycleRef.current !== cycleId) return;
+      setAutoAdvanceSeconds(2);
     });
-  };
+  }
 
   useEffect(() => {
     if (phase !== "feedback" || autoAdvanceSeconds === null) return;
 
-    const countdownTimer = window.setInterval(() => {
-      setAutoAdvanceSeconds((seconds) => (seconds === null ? null : Math.max(0, seconds - 1)));
-    }, 1000);
-    const advanceTimer = window.setTimeout(() => {
-      window.clearInterval(countdownTimer);
-      setAutoAdvanceSeconds(null);
-      if (afterFeedbackActionRef.current === "ask_followup" && followUpQuestionRef.current) {
-        attemptRef.current = 0;
-        setAttempt(0);
-        setTranscript("");
-        void warmTeacherSpeech(followUpQuestionRef.current);
-        askQuestion(cycleRef.current, followUpQuestionRef.current);
+    const timer = window.setTimeout(() => {
+      if (questionIndex >= questions.length - 1) {
+        setPhase("completed");
+        navigate(shouldOpenReportAfterDialogue(tasks, errors) ? "/report" : "/");
         return;
       }
 
-      followUpQuestionRef.current = "";
+      setAutoAdvanceSeconds(null);
       setFollowUpQuestion("");
+      followUpQuestionRef.current = "";
+      setQuestionIndex((index) => Math.min(index + 1, questions.length - 1));
+    }, autoAdvanceSeconds * 1000);
 
-      if (questionIndex >= questions.length - 1) {
-        setPhase("completed");
-        navigate(shouldOpenReportAfterDialogue(tasks, errors) ? "/report" : "/tasks");
-      } else {
-        setQuestionIndex((value) => value + 1);
-      }
-    }, 1000);
-
-    return () => {
-      window.clearInterval(countdownTimer);
-      window.clearTimeout(advanceTimer);
-    };
-  }, [phase, autoAdvanceSeconds, questionIndex, questions.length, tasks, errors, navigate, activeQuestion]);
+    return () => window.clearTimeout(timer);
+  }, [autoAdvanceSeconds, errors, navigate, phase, questionIndex, questions.length, tasks]);
 
   useEffect(() => {
-    cycleRef.current += 1;
-    const cycleId = cycleRef.current;
+    const cycleId = cycleRef.current + 1;
+    cycleRef.current = cycleId;
     clearTimers();
     stopTeacherSpeech();
     stopCurrentMedia();
@@ -400,47 +427,45 @@ export default function DialoguePage() {
     guidanceGivenRef.current = false;
     postGuidanceAttemptRef.current = 0;
     setAttempt(0);
-    setPostGuidanceAttempt(0);
     setGuidanceGiven(false);
+    setPostGuidanceAttempt(0);
     setTranscript("");
     setAutoAdvanceSeconds(null);
-    followUpQuestionRef.current = "";
-    afterFeedbackActionRef.current = "next_preset";
     setFollowUpQuestion("");
-    setAfterFeedbackAction("next_preset");
-    void warmTeacherSpeech(currentQuestion);
+    followUpQuestionRef.current = "";
+
+    const question = questions[questionIndex] ?? currentQuestion;
+    activeQuestionRef.current = question;
+    warmTeacherSpeech(question).catch(() => undefined);
     const nextQuestion = questions[questionIndex + 1];
-    if (nextQuestion) void warmTeacherSpeech(nextQuestion);
-    schedule(() => askQuestion(cycleId), 500);
+    if (nextQuestion) warmTeacherSpeech(nextQuestion).catch(() => undefined);
+    schedule(() => askQuestion(cycleId, question), 450);
 
     return () => {
       clearTimers();
       stopTeacherSpeech();
       stopCurrentMedia();
-      clearSilenceDetection();
     };
-  }, [questionIndex]);
-
-  useEffect(() => {
-    return () => {
-      cycleRef.current += 1;
-      clearTimers();
-      stopTeacherSpeech();
-      stopCurrentMedia();
-      clearSilenceDetection();
-    };
-  }, []);
+  }, [currentQuestion, questionIndex, questions]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [sceneMessages, transcript, phase]);
+
+  useEffect(() => {
+    return () => {
+      clearTimers();
+      stopTeacherSpeech();
+      stopCurrentMedia();
+    };
+  }, []);
 
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="AI 对话练习"
         title="AI 老师实时口语问答"
-        description="AI 老师会朗读提问和引导。连续 3 次识别不清后，会给出参考答案并要求学生继续重复回答，直到识别通过。"
+        description="AI 老师会先反馈，再追问或进入下一题。追问会单独朗读，并等待学生回答。"
       />
 
       <Card className="overflow-hidden border-indigo-100 bg-gradient-to-br from-sky-50 via-indigo-50 to-violet-50">
