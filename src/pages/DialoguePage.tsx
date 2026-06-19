@@ -71,6 +71,12 @@ function getWebkitAudioContext(): typeof AudioContext | undefined {
   return (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
 }
 
+function getEstimatedSpeechMs(text: string) {
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  const punctuationPauses = (text.match(/[.!?。！？]/g) ?? []).length * 280;
+  return Math.max(1500, Math.ceil((words / 1.65) * 1000) + punctuationPauses);
+}
+
 export default function DialoguePage() {
   const { currentUnit, tasks, errors, submitDialogueAnswer } = useLearning();
   const navigate = useNavigate();
@@ -146,12 +152,40 @@ export default function DialoguePage() {
     streamRef.current = null;
   }
 
-  function speak(text: string, onDone?: () => void) {
+  function speak(text: string, onDone?: () => void, pauseAfterMs = 850) {
     if (!text.trim()) {
       onDone?.();
       return;
     }
-    void playTeacherSpeech(text, { onDone });
+
+    let audioDone = false;
+    let minimumWaitDone = false;
+    let finished = false;
+
+    const finish = () => {
+      if (finished || !audioDone || !minimumWaitDone) return;
+      finished = true;
+      schedule(() => onDone?.(), pauseAfterMs);
+    };
+
+    schedule(() => {
+      minimumWaitDone = true;
+      finish();
+    }, getEstimatedSpeechMs(text));
+
+    schedule(() => {
+      if (finished) return;
+      audioDone = true;
+      minimumWaitDone = true;
+      finish();
+    }, getEstimatedSpeechMs(text) + 5000);
+
+    void playTeacherSpeech(text, {
+      onDone: () => {
+        audioDone = true;
+        finish();
+      },
+    });
   }
 
   function addMessage(role: SceneMessage["role"], content: string, shouldSpeak = false, onDone?: () => void) {
@@ -446,7 +480,7 @@ export default function DialoguePage() {
       stopTeacherSpeech();
       stopCurrentMedia();
     };
-  }, [currentQuestion, questionIndex, questions]);
+  }, [questionIndex]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
