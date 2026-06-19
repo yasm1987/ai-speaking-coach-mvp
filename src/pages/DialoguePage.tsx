@@ -25,19 +25,31 @@ function getGuidance(referenceAnswer: string) {
   return `I couldn't hear you clearly. The reference answer is: ${referenceAnswer}. Listen to the question again, then answer.`;
 }
 
-function getAnswerRecordingMs(question: string) {
+function getAnswerRecordingMs(question: string, isFollowUp = false) {
   const words = question.trim().split(/\s+/).filter(Boolean).length;
-  return Math.max(6500, Math.ceil((words / 1.45 + 3.2) * 1000));
+  const baseMs = Math.ceil((words / 1.25 + 4.5) * 1000);
+  return Math.max(isFollowUp ? 11000 : 8500, baseMs);
+}
+
+function getMinimumListenMs(isFollowUp = false) {
+  return isFollowUp ? 6500 : 4800;
+}
+
+function getSilenceStopMs(isFollowUp = false) {
+  return isFollowUp ? 2600 : 2200;
 }
 
 function extractFollowUpQuestion(reply: string) {
-  const match = reply.match(/([A-Z][^.!?]*\?)/g);
-  return match?.at(-1)?.trim() ?? "";
+  const normalized = reply.replace(/\s+/g, " ").trim();
+  const matches = [...normalized.matchAll(/([^.!?。！？]*[?？])/g)]
+    .map((match) => match[1].trim())
+    .filter((question) => question.length > 3);
+  return matches.at(-1) ?? "";
 }
 
 function removeFollowUpQuestion(reply: string, followUpQuestion: string) {
   if (!followUpQuestion) return reply;
-  return reply.replace(followUpQuestion, "").replace(/\s+/g, " ").trim();
+  return reply.replace(followUpQuestion, "").replace(/\s+/g, " ").replace(/\s+([.!?])/g, "$1").trim();
 }
 
 function getWebkitAudioContext(): typeof AudioContext | undefined {
@@ -143,6 +155,7 @@ export default function DialoguePage() {
     activeQuestionRef.current = questionText;
     setPhase("teacher");
     setTranscript("");
+    stopCurrentMedia();
     addMessage("teacher", questionText, true, () => {
       if (cycleRef.current === cycleId) startListening(cycleId);
     });
@@ -186,16 +199,24 @@ export default function DialoguePage() {
       };
 
       recorder.start();
-      startSilenceDetection(stream, recorder);
+      const isFollowUp = Boolean(followUpQuestionRef.current);
+      startSilenceDetection(stream, recorder, {
+        minimumListenMs: getMinimumListenMs(isFollowUp),
+        silenceStopMs: getSilenceStopMs(isFollowUp),
+      });
       schedule(() => {
         if (recorder.state !== "inactive") recorder.stop();
-      }, getAnswerRecordingMs(activeQuestionRef.current || activeQuestion));
+      }, getAnswerRecordingMs(activeQuestionRef.current || activeQuestion, isFollowUp));
     } catch {
       schedule(() => recognizeAnswer(cycleId, null), 1200);
     }
   };
 
-  const startSilenceDetection = (stream: MediaStream, recorder: MediaRecorder) => {
+  const startSilenceDetection = (
+    stream: MediaStream,
+    recorder: MediaRecorder,
+    options: { minimumListenMs: number; silenceStopMs: number },
+  ) => {
     const AudioContextClass = window.AudioContext || getWebkitAudioContext();
     if (!AudioContextClass) return;
 
@@ -216,13 +237,13 @@ export default function DialoguePage() {
         sum += value * value;
       }
       const volume = Math.sqrt(sum / samples.length);
-      const minimumListenMs = Date.now() - startedAt > 2600;
+      const minimumListenMs = Date.now() - startedAt > options.minimumListenMs;
 
       if (volume < 5 && minimumListenMs) {
         if (!silenceTimerRef.current) {
           silenceTimerRef.current = window.setTimeout(() => {
             if (recorder.state !== "inactive") recorder.stop();
-          }, 1700);
+          }, options.silenceStopMs);
         }
       } else if (silenceTimerRef.current) {
         window.clearTimeout(silenceTimerRef.current);
@@ -309,6 +330,22 @@ export default function DialoguePage() {
       setFollowUpQuestion(nextFollowUp);
       afterFeedbackActionRef.current = "ask_followup";
       setAfterFeedbackAction("ask_followup");
+
+      const askFollowUp = () => {
+        if (cycleRef.current !== cycleId) return;
+        attemptRef.current = 0;
+        setAttempt(0);
+        setTranscript("");
+        void warmTeacherSpeech(nextFollowUp);
+        askQuestion(cycleId, nextFollowUp);
+      };
+
+      if (feedbackText) {
+        addMessage("teacher", feedbackText, true, () => schedule(askFollowUp, 250));
+      } else {
+        askFollowUp();
+      }
+      return;
     } else {
       afterFeedbackActionRef.current = "next_preset";
       setAfterFeedbackAction("next_preset");

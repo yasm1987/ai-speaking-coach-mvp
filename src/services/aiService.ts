@@ -126,10 +126,7 @@ export async function recognizeSpeech(input: { audioBlob: Blob; fileName?: strin
 
   const json = (await response.json()) as ApiEnvelope<{ text: string }>;
   const cleanedText = json.data.text.trim();
-  if (!cleanedText) {
-    throw new Error("ASR returned empty text.");
-  }
-
+  if (!cleanedText) throw new Error("ASR returned empty text.");
   return cleanedText;
 }
 
@@ -499,12 +496,24 @@ export async function analyzeDialogueAnswer(input: {
   const ruleResult = getDialogueRuleResult(input.question, input.answer);
 
   try {
+    const chatRequest = postJson<{ reply: string }>("/tutor/chat", {
+      message: input.answer,
+      history: [{ role: "ai", content: input.question }],
+      level: "kids",
+    });
+
+    if (ruleResult.isCorrect) {
+      const chatData = await chatRequest;
+      const result = {
+        ...ruleResult,
+        feedback: chatData.reply || ruleResult.feedback,
+      };
+      void saveLearningSession("dialogue", `Dialogue answer: ${input.answer}`, 90);
+      return result;
+    }
+
     const [chatData, errorData] = await Promise.all([
-      postJson<{ reply: string }>("/tutor/chat", {
-        message: input.answer,
-        history: [{ role: "ai", content: input.question }],
-        level: "kids",
-      }),
+      chatRequest,
       postJson<{ mistakes: BackendGrammarMistake[] }>("/analyze/error", {
         text: input.answer,
       }),
