@@ -105,7 +105,7 @@ export async function recognizeSpeech(input: { audioBlob: Blob; fileName?: strin
   let uploadFileName = input.fileName ?? "recording.webm";
 
   try {
-    uploadBlob = await convertBlobToWav(input.audioBlob);
+    uploadBlob = await convertBlobToWav(input.audioBlob, 16000);
     uploadFileName = replaceExtension(uploadFileName, "wav");
   } catch {
     uploadBlob = input.audioBlob;
@@ -450,7 +450,7 @@ async function prepareAudioForBackend(audioBlob: Blob) {
   let audioFormat = getAudioFormat(audioBlob.type);
 
   try {
-    uploadBlob = await convertBlobToWav(audioBlob);
+    uploadBlob = await convertBlobToWav(audioBlob, 16000);
     audioFormat = "wav";
   } catch {
     audioFormat = getAudioFormat(audioBlob.type);

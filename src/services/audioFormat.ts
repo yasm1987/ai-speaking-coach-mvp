@@ -1,5 +1,5 @@
-export async function convertBlobToWav(inputBlob: Blob): Promise<Blob> {
-  if (inputBlob.type.includes("wav")) return inputBlob;
+export async function convertBlobToWav(inputBlob: Blob, targetSampleRate?: number): Promise<Blob> {
+  if (inputBlob.type.includes("wav") && !targetSampleRate) return inputBlob;
 
   const arrayBuffer = await inputBlob.arrayBuffer();
   const audioContext = new AudioContext();
@@ -7,7 +7,12 @@ export async function convertBlobToWav(inputBlob: Blob): Promise<Blob> {
   try {
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
     const monoData = mixToMono(audioBuffer);
-    const wavBuffer = encodeWav(monoData, audioBuffer.sampleRate);
+    const outputSampleRate = targetSampleRate ?? audioBuffer.sampleRate;
+    const outputData =
+      targetSampleRate && targetSampleRate !== audioBuffer.sampleRate
+        ? resampleLinear(monoData, audioBuffer.sampleRate, targetSampleRate)
+        : monoData;
+    const wavBuffer = encodeWav(outputData, outputSampleRate);
     return new Blob([wavBuffer], { type: "audio/wav" });
   } finally {
     await audioContext.close();
@@ -30,6 +35,24 @@ function mixToMono(audioBuffer: AudioBuffer): Float32Array {
   }
 
   return mono;
+}
+
+function resampleLinear(input: Float32Array, fromSampleRate: number, toSampleRate: number): Float32Array {
+  if (fromSampleRate === toSampleRate) return input;
+
+  const ratio = fromSampleRate / toSampleRate;
+  const outputLength = Math.max(1, Math.round(input.length / ratio));
+  const output = new Float32Array(outputLength);
+
+  for (let i = 0; i < outputLength; i += 1) {
+    const sourceIndex = i * ratio;
+    const leftIndex = Math.floor(sourceIndex);
+    const rightIndex = Math.min(leftIndex + 1, input.length - 1);
+    const weight = sourceIndex - leftIndex;
+    output[i] = input[leftIndex] * (1 - weight) + input[rightIndex] * weight;
+  }
+
+  return output;
 }
 
 function encodeWav(channelData: Float32Array, sampleRate: number): ArrayBuffer {
