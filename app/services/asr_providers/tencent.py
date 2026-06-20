@@ -7,7 +7,7 @@ import hmac
 import json
 import re
 import time
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import httpx
 
@@ -85,7 +85,7 @@ class TencentASRProvider(BaseASRProvider):
     async def _request(self, action: str, payload: dict) -> dict:
         request_body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
         timestamp = int(time.time())
-        date = datetime.fromtimestamp(timestamp, UTC).strftime("%Y-%m-%d")
+        date = datetime.fromtimestamp(timestamp, timezone.utc).strftime("%Y-%m-%d")
         authorization = self._build_authorization(action, request_body, timestamp, date)
 
         headers = {
