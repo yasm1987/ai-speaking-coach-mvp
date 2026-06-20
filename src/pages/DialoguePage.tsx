@@ -440,6 +440,8 @@ export default function DialoguePage() {
 
   async function submitRecognizedAnswer(cycleId: number, answer: string) {
     const answeredQuestion = activeQuestionRef.current;
+    const isFollowUpAnswer = Boolean(followUpQuestionRef.current);
+    const isLastPresetQuestion = !isFollowUpAnswer && questionIndexRef.current >= questions.length - 1;
     const nextPresetQuestion = questions[questionIndexRef.current + 1] ?? "本轮对话完成";
     const analysis = await submitDialogueAnswer(answer, answeredQuestion, nextPresetQuestion);
     if (cycleRef.current !== cycleId) return;
@@ -452,9 +454,11 @@ export default function DialoguePage() {
     setGuidanceGiven(false);
     setPostGuidanceAttempt(0);
 
-    const rawFollowUp = !followUpQuestionRef.current && analysis.isCorrect ? extractFollowUpQuestion(analysis.feedback) : "";
+    const possibleFollowUp = analysis.isCorrect ? extractFollowUpQuestion(analysis.feedback) : "";
+    const canAskFollowUp = !isFollowUpAnswer && !isLastPresetQuestion;
+    const rawFollowUp = canAskFollowUp ? possibleFollowUp : "";
     const spokenFollowUp = cleanQuestionForSpeech(rawFollowUp);
-    const feedbackText = removeFollowUpQuestion(analysis.feedback, rawFollowUp);
+    const feedbackText = removeFollowUpQuestion(analysis.feedback, possibleFollowUp);
 
     if (spokenFollowUp) {
       followUpQuestionRef.current = spokenFollowUp;
@@ -486,6 +490,17 @@ export default function DialoguePage() {
 
     setFollowUpQuestion("");
     followUpQuestionRef.current = "";
+
+    if (isLastPresetQuestion) {
+      const closingFeedback = `${feedbackText || analysis.feedback} Good job today. This dialogue practice is finished.`;
+      addMessage("teacher", closingFeedback, true, () => {
+        if (cycleRef.current !== cycleId) return;
+        setPhase("completed");
+        schedule(() => navigate(shouldOpenReportAfterDialogue(tasks, errors) ? "/report" : "/"), 900);
+      }, 700);
+      return;
+    }
+
     addMessage("teacher", feedbackText || analysis.feedback, true, () => {
       if (cycleRef.current !== cycleId) return;
       setAutoAdvanceSeconds(1);
